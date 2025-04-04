@@ -18,7 +18,7 @@ function setup() {
     // Initialize Matter.js physics engine
     engine = Matter.Engine.create();
     world = engine.world;
-    world.gravity.y = 1;
+    world.gravity.y = 0.3; // Very low gravity for extremely slow movement
     
     // Create ground
     ground = Matter.Bodies.rectangle(width/2, height, width, 50, {
@@ -44,6 +44,22 @@ function setup() {
 
 function draw() {
     background(255);
+    
+    // Always draw the ground first before anything else
+    if (!drawingMode) {
+        // Draw ground consistently every frame
+        drawGround();
+    }
+    
+    // Slow down the physics engine by limiting updates
+    // Only update physics every 3 frames for even slower movement
+    if (!drawingMode && frameCount % 3 !== 0) {
+        // Skip physics update this frame but still render walker
+        if (walker) {
+            walker.display(false); // Pass false to skip physics update
+        }
+        return;
+    }
     
     if (drawingMode) {
         // Drawing mode
@@ -131,19 +147,22 @@ function draw() {
         }
     } else {
         // Simulation mode
-        Matter.Engine.update(engine);
+        // Run the physics engine at extremely slow speed
+        Matter.Engine.update(engine, 1000/120); // Force very small time step
         
-        // Draw ground
-        fill(50);
-        noStroke();
-        rectMode(CENTER);
-        rect(width/2, height, width, 50);
-        
-        // Draw walker
+        // Draw walker with physics update
         if (walker) {
-            walker.display();
+            walker.display(true); // Update physics
         }
     }
+}
+
+// Function to draw the ground consistently
+function drawGround() {
+    fill(50);
+    noStroke();
+    rectMode(CENTER);
+    rect(width/2, height, width, 50);
 }
 
 // Helper function to draw a dashed line

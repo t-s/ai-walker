@@ -4,9 +4,9 @@ class Walker {
         this.bodyParts = [];
         this.joints = [];
         this.timeStep = 0;
-        this.simulationSpeed = 0.05;
-        this.learningRate = 0.0005; // Rate at which the AI "learns" movement patterns
-        this.forwardBias = 0.6; // Bias toward moving forward (right)
+        this.simulationSpeed = 0.005; // Extremely slow simulation speed
+        this.learningRate = 0.0001; // Very slow learning for stability
+        this.forwardBias = 0.05; // Minimal forward bias to prevent veering off screen
         this.successfulMoves = [];
         this.lastPosition = null;
         this.stuckCounter = 0;
@@ -37,11 +37,23 @@ class Walker {
             
             // Create main body first at the center
             let mainBodyShape = shapes[largestShapeIndex];
+            
+            // Calculate the size/area of the shape to determine appropriate density
+            const bodyArea = this.calculateShapeArea(mainBodyShape);
+            // Much higher density for the main body to make it extremely stable and heavy
+            const bodyDensity = Math.min(0.2, Math.max(0.1, bodyArea / 5000)); // Higher density range
+            
             this.mainBody = new Shape(mainBodyShape, this.world, width / 2, baseY, {
                 friction: 0.7,
-                restitution: 0.2,
-                density: 0.01, // Heavier to act as the main body
-                frictionAir: 0.01
+                restitution: 0.1, // Lower restitution (bounciness) for more stability
+                density: bodyDensity, // Density based on size
+                frictionAir: 0.02, // Increased air friction for more realistic movement
+                // Set a special collision group for body parts to prevent internal collisions
+                collisionFilter: {
+                    group: -1,  // Negative group means it never collides with other bodies in same group
+                    category: 0x0001,
+                    mask: 0xFFFFFFFF
+                }
             });
             
             this.bodyParts.push(this.mainBody);
@@ -76,12 +88,23 @@ class Walker {
                     const initialX = width / 2 + (connectionInfo.appendagePoint.x - mainBodyCenter.x);
                     const initialY = baseY + (connectionInfo.appendagePoint.y - mainBodyCenter.y);
                     
+                    // Calculate the size/area of the appendage to determine appropriate density
+                    const appendageArea = this.calculateShapeArea(shape);
+                    // Keep appendages much lighter than body for better movement but still not too light
+                    const appendageDensity = Math.min(0.01, Math.max(0.002, appendageArea / 30000));
+                    
                     // Adjust starting position to maintain original relative positioning
                     const appendage = new Shape(shape, this.world, initialX, initialY, {
-                        friction: 0.3,
-                        restitution: 0.4,
-                        density: 0.003, // Lighter for appendages
-                        frictionAir: 0.02
+                        friction: 0.4,
+                        restitution: 0.2,
+                        density: appendageDensity, // Density based on size
+                        frictionAir: 0.03, // Higher air friction for appendages
+                        // Use same collision group as main body to prevent internal collisions
+                        collisionFilter: {
+                            group: -1, // Same group as main body so they don't collide with each other
+                            category: 0x0001,
+                            mask: 0xFFFFFFFF
+                        }
                     });
                     
                     this.bodyParts.push(appendage);
@@ -104,20 +127,74 @@ class Walker {
                         y: connectionInfo.appendagePoint.y - appendageCenter.y
                     };
                     
-                    // Create constraint connecting the exact attachment points
+                    // Store the original connection points for visual rendering
+                    appendage.connectionPoint = {
+                        bodyPoint: {
+                            x: connectionInfo.bodyPoint.x,
+                            y: connectionInfo.bodyPoint.y
+                        },
+                        appendagePoint: {
+                            x: connectionInfo.appendagePoint.x,
+                            y: connectionInfo.appendagePoint.y
+                        },
+                        bodyLocalPoint: mainBodyLocal,
+                        appendageLocalPoint: appendageLocal
+                    };
+                    
+                    // Create a very stiff constraint connecting the exact attachment points
                     const joint = Matter.Constraint.create({
                         bodyA: this.mainBody.body,
                         bodyB: appendage.body,
                         pointA: mainBodyLocal,
                         pointB: appendageLocal,
-                        stiffness: 0.2,   // Increased stiffness for better connection
-                        length: 5,        // Short length to keep connection tight
-                        damping: 0.2,
+                        stiffness: 1.0,   // Maximum stiffness for rigid connection
+                        length: 0,        // Zero length to keep parts tightly connected
+                        damping: 0.5,     // Damping to reduce oscillations
                         render: { visible: true }
                     });
                     
+                    // Add a secondary stabilizing joint to prevent separation during motion
+                    const stabilizingJoint = Matter.Constraint.create({
+                        bodyA: this.mainBody.body,
+                        bodyB: appendage.body,
+                        pointA: { 
+                            x: mainBodyLocal.x + (mainBodyLocal.x > 0 ? -5 : 5), 
+                            y: mainBodyLocal.y + 5
+                        },
+                        pointB: { 
+                            x: appendageLocal.x + (appendageLocal.x > 0 ? -5 : 5), 
+                            y: appendageLocal.y + 5
+                        },
+                        stiffness: 0.7,
+                        length: 0,
+                        damping: 0.5,
+                        render: { visible: false }
+                    });
+                    
+                    // Add a third stabilizing joint for even more rigidity
+                    const stabilizingJoint2 = Matter.Constraint.create({
+                        bodyA: this.mainBody.body,
+                        bodyB: appendage.body,
+                        pointA: { 
+                            x: mainBodyLocal.x, 
+                            y: mainBodyLocal.y - 5
+                        },
+                        pointB: { 
+                            x: appendageLocal.x, 
+                            y: appendageLocal.y - 5
+                        },
+                        stiffness: 0.7,
+                        length: 0,
+                        damping: 0.5,
+                        render: { visible: false }
+                    });
+                    
                     Matter.Composite.add(this.world, joint);
+                    Matter.Composite.add(this.world, stabilizingJoint);
+                    Matter.Composite.add(this.world, stabilizingJoint2);
                     this.joints.push(joint);
+                    this.joints.push(stabilizingJoint);
+                    this.joints.push(stabilizingJoint2);
                     
                     appendageIndex++;
                 }
@@ -186,6 +263,101 @@ class Walker {
         return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
     }
     
+    // Calculate the approximate area of a shape (polygon)
+    calculateShapeArea(points) {
+        let area = 0;
+        const n = points.length;
+        
+        // Use the Shoelace formula to calculate polygon area
+        for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            area += points[i].x * points[j].y;
+            area -= points[j].x * points[i].y;
+        }
+        
+        area = Math.abs(area) / 2;
+        return area;
+    }
+    
+    // Prevent parts from separating by adjusting their positions if needed
+    preventPartSeparation() {
+        if (!this.mainBody || this.appendages.length === 0) return;
+        
+        for (const appendageInfo of this.appendages) {
+            const appendage = appendageInfo.shape;
+            const mainBody = this.mainBody;
+            
+            if (!appendage.connectionPoint) continue;
+            
+            // Get the connection points in local coordinates
+            const bodyLocalPoint = appendage.connectionPoint.bodyLocalPoint;
+            const appendageLocalPoint = appendage.connectionPoint.appendageLocalPoint;
+            
+            // Transform to world coordinates
+            const bodyAngle = mainBody.body.angle;
+            const appendageAngle = appendage.body.angle;
+            
+            // Calculate actual connection points in world space
+            const mainBodyWorldPoint = {
+                x: mainBody.body.position.x + 
+                   (bodyLocalPoint.x * Math.cos(bodyAngle) - bodyLocalPoint.y * Math.sin(bodyAngle)),
+                y: mainBody.body.position.y + 
+                   (bodyLocalPoint.x * Math.sin(bodyAngle) + bodyLocalPoint.y * Math.cos(bodyAngle))
+            };
+            
+            const appendageWorldPoint = {
+                x: appendage.body.position.x + 
+                   (appendageLocalPoint.x * Math.cos(appendageAngle) - appendageLocalPoint.y * Math.sin(appendageAngle)),
+                y: appendage.body.position.y + 
+                   (appendageLocalPoint.x * Math.sin(appendageAngle) + appendageLocalPoint.y * Math.cos(appendageAngle))
+            };
+            
+            // Calculate distance between connection points
+            const distance = Math.sqrt(
+                Math.pow(appendageWorldPoint.x - mainBodyWorldPoint.x, 2) + 
+                Math.pow(appendageWorldPoint.y - mainBodyWorldPoint.y, 2)
+            );
+            
+            // If distance is too large, force direct position correction
+            const maxDistance = 2; // Very strict maximum allowed separation
+            if (distance > maxDistance) {
+                // Calculate direction vector
+                const direction = {
+                    x: (appendageWorldPoint.x - mainBodyWorldPoint.x) / distance,
+                    y: (appendageWorldPoint.y - mainBodyWorldPoint.y) / distance
+                };
+                
+                // Move appendage directly to maintain connection
+                const newAppendagePos = {
+                    x: mainBodyWorldPoint.x + direction.x * maxDistance, 
+                    y: mainBodyWorldPoint.y + direction.y * maxDistance
+                };
+                
+                // Calculate offset from current position
+                const offsetX = appendageWorldPoint.x - appendage.body.position.x;
+                const offsetY = appendageWorldPoint.y - appendage.body.position.y;
+                
+                // Set new position directly
+                Matter.Body.setPosition(appendage.body, {
+                    x: newAppendagePos.x - offsetX,
+                    y: newAppendagePos.y - offsetY
+                });
+                
+                // Also match rotation/angle to maintain natural joint appearance
+                const angleToMainBody = Math.atan2(
+                    mainBodyWorldPoint.y - appendageWorldPoint.y,
+                    mainBodyWorldPoint.x - appendageWorldPoint.x
+                );
+                
+                // Only adjust angle for extreme cases to avoid disrupting natural physics
+                const angleDiff = Math.abs(appendageAngle - bodyAngle);
+                if (angleDiff > Math.PI) {
+                    Matter.Body.setAngle(appendage.body, bodyAngle);
+                }
+            }
+        }
+    }
+    
     setupAIBehavior() {
         // Enhanced AI behavior with adapting movement patterns
         this.movementPatterns = [];
@@ -232,25 +404,25 @@ class Walker {
                     const walkCycleSpeed = map(i, 0, appendages.length, 0.12, 0.08);
                     const walkStrength = map(i, 0, appendages.length, 1.8, 0.8);
                     
-                    // Create more extreme movement for appendages
+                    // Create extremely slow, deliberate movement for appendages
                     const pattern = {
                         bodyPart: appendage.shape,
-                        frequency: random(0.05, 0.15),  // Faster movement
-                        amplitude: random(0.001, 0.004),  // Stronger movement
+                        frequency: random(0.005, 0.01),  // Extremely slow oscillation
+                        amplitude: random(0.0001, 0.0003),  // Very minimal base movement
                         phase: random(0, TWO_PI) + phaseOffset,  // Alternating phase
                         direction: { 
-                            x: random(0.3, 1.0) * sideMultiplier, // Direction based on side
-                            y: random(-0.8, 0.2)  // Mostly upward force to simulate pushing
+                            x: random(0.05, 0.2) * sideMultiplier, // Minimal directional force
+                            y: random(-0.1, 0.05)  // Very minimal vertical force
                         },
                         adaptation: { x: 0, y: 0 },
                         successRate: 0,
-                        // Add coordinated "walking" behavior
+                        // Add extremely slow walking behavior
                         walkCycle: {
-                            speed: walkCycleSpeed, // Speed adjusted by position
-                            strength: walkStrength, // Strength adjusted by position
+                            speed: walkCycleSpeed * 0.1, // Extremely slow pace
+                            strength: walkStrength * 0.2, // Very gentle movement
                             phaseOffset: phaseOffset,
-                            stepHeight: random(0.8, 1.5),  // How high the leg lifts
-                            pushForce: random(1.0, 2.5)    // How hard it pushes off ground
+                            stepHeight: random(0.1, 0.3),  // Minimal lift height
+                            pushForce: random(0.2, 0.5)    // Very gentle push-off force
                         }
                     };
                     
@@ -355,6 +527,9 @@ class Walker {
         // Check for ground contacts
         this.detectGroundContacts();
         
+        // Ensure parts remain properly connected
+        this.preventPartSeparation();
+        
         // Apply forces based on AI behavior
         for (let i = 0; i < this.movementPatterns.length; i++) {
             const pattern = this.movementPatterns[i];
@@ -364,11 +539,19 @@ class Walker {
             const isAppendage = this.appendages.some(a => a.shape === bodyPart);
             const appendageInfo = isAppendage ? this.appendages.find(a => a.shape === bodyPart) : null;
             
-            // Base sine wave movement
+            // Get body part for mass-based force scaling
+            const body = bodyPart.body;
+            const mass = body.mass;
+            
+            // Scale forces extremely inversely with mass - heavier objects move very little
+            // Using an extreme scaling factor to keep objects more stable
+            const massScaleFactor = 1 / (1 + mass * 50); // Extremely aggressive mass scaling
+            
+            // Base sine wave movement with mass scaling
             let forceX = sin(this.timeStep * pattern.frequency + pattern.phase) * 
-                         pattern.amplitude * pattern.direction.x;
+                         pattern.amplitude * pattern.direction.x * massScaleFactor;
             let forceY = cos(this.timeStep * pattern.frequency + pattern.phase) * 
-                         pattern.amplitude * pattern.direction.y;
+                         pattern.amplitude * pattern.direction.y * massScaleFactor;
             
             // Add walking cycle for appendages
             if (pattern.walkCycle) {
@@ -386,58 +569,60 @@ class Walker {
                 const pushForce = pattern.walkCycle.pushForce || 1.5;
                 
                 if (isInContact && isPushPhase) {
-                    // Push-off force when touching ground
+                    // Push-off force when touching ground - gentler for human-like gait
                     const pushStrength = pattern.walkCycle.strength * 
                                         pattern.amplitude * 
-                                        pushForce * 3.0; // Stronger push when in contact
+                                        pushForce * 1.5 * massScaleFactor; // Reduced force
                     
                     // Direction depends on which side the appendage is on
                     const directionMultiplier = appendageInfo && appendageInfo.isLeftSide ? -1.0 : 1.0;
                     
-                    // Apply stronger horizontal force during push-off
+                    // Apply horizontal force during push-off with smoother profile
                     // Use a non-linear function to simulate natural push-off mechanics
-                    // Stronger at the beginning of contact, gradually decreasing
-                    const pushProfile = (1 - abs(contactPhase)) * abs(contactPhase) * 4; // Peak in middle of cycle
+                    const pushProfile = sin(contactPhase * PI) * 0.8; // Smoother, more gradual push
                     forceX += pushStrength * directionMultiplier * pushProfile;
                     
-                    // Slight upward force to prepare for lift, with a different profile
-                    // Stronger toward the end of the push phase to simulate preparing for recovery
-                    const liftProfile = pow(contactPhase, 2); // Increases toward end of push
-                    forceY -= pushStrength * 0.5 * liftProfile;
+                    // Gentler upward force to prepare for lift
+                    // Human-like walking has minimal vertical movement
+                    const liftProfile = pow(contactPhase, 2) * 0.7; // Gentler lift profile
+                    forceY -= pushStrength * 0.2 * liftProfile * (1 / (mass * 2));
                     
-                    // Add "grip" effect - slight backward force at start of push to simulate friction
+                    // Add subtle "grip" effect - slight backward force at start of push
                     if (contactPhase < 0.3) {
-                        forceX -= pushStrength * directionMultiplier * 0.3 * (0.3 - contactPhase);
+                        forceX -= pushStrength * directionMultiplier * 0.2 * (0.3 - contactPhase);
                     }
                 } else {
-                    // Recovery phase - lifting and moving forward
-                    // Use stepHeight parameter for more control
-                    const liftStrength = pattern.walkCycle.strength * pattern.amplitude * stepHeight * 1.5;
+                    // Recovery phase - with human-like timing
+                    // Human walking has a stance phase (~60%) and swing phase (~40%)
+                    const liftStrength = pattern.walkCycle.strength * pattern.amplitude * 
+                                         stepHeight * massScaleFactor * 1.2; // Gentler recovery strength
                     
-                    // Create a more complex recovery motion
-                    // - First half: lift up and move backward (relative to push direction)
-                    // - Second half: move forward in preparation for next step
+                    // Create a more human-like recovery motion
+                    // - More time in stance phase, less in swing phase
+                    // - Slower lift, faster return to ground
                     const recoveryProgress = (1 + contactPhase) / 2; // 0 to 1 during recovery
                     
-                    // Lift up during first part of recovery, then come back down
-                    const liftProfile = sin(recoveryProgress * PI); // Peaks in middle
-                    forceY -= liftStrength * 1.5 * liftProfile;
+                    // Human-like lift profile - less height, more gradual
+                    const liftProfile = sin(recoveryProgress * PI) * 0.6; // Lower, gentler lift
+                    const liftHeightFactor = 1 / (1 + mass * 5); // Reduce lift height for heavier parts
+                    forceY -= liftStrength * 0.6 * liftProfile * liftHeightFactor;
                     
-                    // Forward/backward motion during recovery depends on side and phase
+                    // Forward/backward motion during recovery
                     if (appendageInfo) {
-                        // Initially move backward (opposite of push), then forward
-                        // This creates a more realistic stepping motion
-                        const recoveryX = appendageInfo.isLeftSide ? 1.0 : -1.0; // Opposite of push direction
+                        // Human walking has a specific pattern of foot movement
+                        const recoveryX = appendageInfo.isLeftSide ? 1.0 : -1.0;
                         
-                        // First half of recovery: move backward
-                        if (recoveryProgress < 0.5) {
-                            const backwardProfile = (0.5 - recoveryProgress) * 2; // 1 to 0
-                            forceX += liftStrength * 0.6 * recoveryX * backwardProfile;
+                        // First half of recovery: gentle backward movement
+                        if (recoveryProgress < 0.4) { // Shorter backward phase
+                            const backwardProfile = (0.4 - recoveryProgress) * 2.5; // Gentler backward motion
+                            forceX += liftStrength * 0.25 * recoveryX * backwardProfile;
                         } 
-                        // Second half: move forward to prepare for next push
+                        // Second half: forward movement to prepare for next step
                         else {
-                            const forwardProfile = (recoveryProgress - 0.5) * 2; // 0 to 1
-                            forceX -= liftStrength * 1.0 * recoveryX * forwardProfile;
+                            // Longer forward phase (60% of recovery)
+                            const forwardProgress = (recoveryProgress - 0.4) / 0.6; // Normalized 0-1
+                            const forwardProfile = sin(forwardProgress * PI/2); // Accelerate, then maintain
+                            forceX -= liftStrength * 0.5 * recoveryX * forwardProfile;
                         }
                     }
                 }
@@ -473,8 +658,14 @@ class Walker {
                 forceY += random(-pattern.jitter, pattern.jitter);
             }
             
-            // Add forward bias to encourage moving right overall
-            forceX += this.forwardBias * pattern.amplitude * 0.1;
+            // Add extremely minimal forward bias to barely encourage forward movement
+            // Apply bias more to appendages than main body
+            if (isAppendage) {
+                forceX += this.forwardBias * pattern.amplitude * 0.05;
+            } else {
+                // Even less bias for the main body to keep it stable
+                forceX += this.forwardBias * pattern.amplitude * 0.01;
+            }
             
             // Apply coordinated movements between appendages
             // If this is an appendage, coordinate with other appendages
@@ -569,52 +760,93 @@ class Walker {
         }
     }
     
-    display() {
-        // Update AI movement
-        this.update();
+    display(updatePhysics = true) {
+        // Update AI movement only if updatePhysics is true
+        if (updatePhysics) {
+            this.update();
+        }
         
-        // Display joints first (so they're behind body parts)
-        push();
-        stroke(100, 100, 100, 150);
-        strokeWeight(3);
-        for (let joint of this.joints) {
-            const pointA = joint.bodyA.position;
-            const offsetA = joint.pointA;
-            const pointB = joint.bodyB.position;
-            const offsetB = joint.pointB;
-            
-            // Draw joint connection
-            line(
-                pointA.x + offsetA.x,
-                pointA.y + offsetA.y,
-                pointB.x + offsetB.x,
-                pointB.y + offsetB.y
-            );
-            
-            // Draw pivot points
+        // Draw connection lines between appendages and body
+        // This ensures visual continuity even if physics has small gaps
+        if (this.mainBody && this.appendages.length > 0) {
             push();
-            noStroke();
-            fill(255, 100, 0, 200); // Orange pivot indicator
-            ellipse(
-                pointA.x + offsetA.x,
-                pointA.y + offsetA.y,
-                8, 8
-            );
+            stroke(40, 40, 40, 200);
+            strokeWeight(4);
             
-            fill(255, 100, 0, 150); // Orange pivot indicator
-            ellipse(
-                pointB.x + offsetB.x,
-                pointB.y + offsetB.y,
-                8, 8
-            );
+            for (const appendageInfo of this.appendages) {
+                const appendage = appendageInfo.shape;
+                
+                if (appendage.connectionPoint) {
+                    // Get the original connection points
+                    const bodyPoint = appendage.connectionPoint.bodyPoint;
+                    const appendagePoint = appendage.connectionPoint.appendagePoint;
+                    
+                    // Calculate the current world positions of each shape
+                    const mainBodyPos = this.mainBody.body.position;
+                    const mainBodyAngle = this.mainBody.body.angle;
+                    const appendagePos = appendage.body.position;
+                    const appendageAngle = appendage.body.angle;
+                    
+                    // Transform connection points to current world space
+                    const bodyLocalPoint = appendage.connectionPoint.bodyLocalPoint;
+                    const appendageLocalPoint = appendage.connectionPoint.appendageLocalPoint;
+                    
+                    // Calculate current body connection point
+                    const bodyWorldX = mainBodyPos.x + 
+                        (bodyLocalPoint.x * Math.cos(mainBodyAngle) - bodyLocalPoint.y * Math.sin(mainBodyAngle));
+                    const bodyWorldY = mainBodyPos.y + 
+                        (bodyLocalPoint.x * Math.sin(mainBodyAngle) + bodyLocalPoint.y * Math.cos(mainBodyAngle));
+                        
+                    // Calculate current appendage connection point
+                    const appendageWorldX = appendagePos.x + 
+                        (appendageLocalPoint.x * Math.cos(appendageAngle) - appendageLocalPoint.y * Math.sin(appendageAngle));
+                    const appendageWorldY = appendagePos.y + 
+                        (appendageLocalPoint.x * Math.sin(appendageAngle) + appendageLocalPoint.y * Math.cos(appendageAngle));
+                    
+                    // Draw solid connection line
+                    strokeWeight(6);
+                    stroke(40, 40, 40, 220);
+                    line(bodyWorldX, bodyWorldY, appendageWorldX, appendageWorldY);
+                }
+            }
             pop();
         }
-        pop();
         
         // Display body parts
         for (let part of this.bodyParts) {
             part.display();
         }
+        
+        // Display joints as pivot points
+        push();
+        for (let joint of this.joints) {
+            // Only display the main visible joints
+            if (joint.render.visible) {
+                const pointA = joint.bodyA.position;
+                const offsetA = joint.pointA;
+                const pointB = joint.bodyB.position;
+                const offsetB = joint.pointB;
+                
+                // Draw pivot points
+                push();
+                noStroke();
+                fill(255, 100, 0, 200); // Orange pivot indicator
+                ellipse(
+                    pointA.x + offsetA.x,
+                    pointA.y + offsetA.y,
+                    8, 8
+                );
+                
+                fill(255, 100, 0, 150); // Orange pivot indicator
+                ellipse(
+                    pointB.x + offsetB.x,
+                    pointB.y + offsetB.y,
+                    8, 8
+                );
+                pop();
+            }
+        }
+        pop();
         
         // Optional debug info - draw connection points in simulation mode
         if (this.debugMode) {

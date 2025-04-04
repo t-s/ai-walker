@@ -9,6 +9,7 @@ class Shape {
         this.lastContactTime = 0; // When this shape last touched ground
         this.animationColor = null; // For visual feedback during animation
         this.originalColor = this.color; // Store original color
+        this.connectionPoint = null; // Will store connection info if this is an appendage
         
         // Create Matter.js body from points
         this.createBody();
@@ -21,14 +22,35 @@ class Shape {
             y: p.y - this.points[0].y + this.y
         }));
         
-        // Create Matter.js body
+        // Calculate center of mass for the shape
+        let cx = 0, cy = 0;
+        for (const p of vertices) {
+            cx += p.x;
+            cy += p.y;
+        }
+        cx /= vertices.length;
+        cy /= vertices.length;
+        
+        // Create Matter.js body with specified options
         this.body = Matter.Bodies.fromVertices(this.x, this.y, [vertices], {
             friction: 0.5,
             restitution: 0.2,
             density: 0.01,
+            frictionStatic: 0.7,
+            collisionFilter: {
+                group: 0,
+                category: 0x0001,
+                mask: 0xFFFFFFFF
+            },
             // Allow for custom properties from options
             ...this.options
         });
+        
+        // Store original positions for each vertex relative to center
+        this.originalVertices = vertices.map(v => ({
+            x: v.x - cx,
+            y: v.y - cy
+        }));
         
         // Add to world
         Matter.Composite.add(this.world, this.body);
@@ -55,7 +77,7 @@ class Shape {
         stroke(0);
         strokeWeight(2);
         
-        // Draw the shape
+        // Draw using the original points since the physics vertices might cause issues
         beginShape();
         for (let point of this.points) {
             // Adjust for center position
