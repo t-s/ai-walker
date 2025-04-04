@@ -5,6 +5,10 @@ class Shape {
         this.x = x;
         this.y = y;
         this.color = options.color || color(random(100, 200), random(100, 200), random(100, 200), 200);
+        this.isAnimating = false; // For animation and ground contact visualization
+        this.lastContactTime = 0; // When this shape last touched ground
+        this.animationColor = null; // For visual feedback during animation
+        this.originalColor = this.color; // Store original color
         
         // Create Matter.js body from points
         this.createBody();
@@ -38,7 +42,16 @@ class Shape {
         translate(pos.x, pos.y);
         rotate(angle);
         
-        fill(this.color);
+        // Determine fill color based on animation state
+        if (this.isAnimating && this.animationColor) {
+            fill(this.animationColor);
+        } else if (this.body.isInContact) {
+            // Highlight when in contact with ground
+            fill(color(255, 150, 0, 200)); // Orange for ground contact
+        } else {
+            fill(this.color);
+        }
+        
         stroke(0);
         strokeWeight(2);
         
@@ -69,6 +82,19 @@ class Shape {
             line(0, 0, -5, -3);
             line(0, 0, -5, 3);
             pop();
+        }
+        
+        // Draw ground contact indicator if in contact with ground
+        if (this.body.isInContact) {
+            stroke(0, 255, 0);
+            strokeWeight(3);
+            // Draw a green line at the bottom of the shape to show contact point
+            line(-15, 15, 15, 15);
+            
+            // Add push-off visualization
+            fill(0, 255, 0, 100);
+            noStroke();
+            ellipse(0, 15, 20, 10);
         }
         
         pop();

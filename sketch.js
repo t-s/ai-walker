@@ -23,7 +23,9 @@ function setup() {
     // Create ground
     ground = Matter.Bodies.rectangle(width/2, height, width, 50, {
         isStatic: true,
-        render: { fillStyle: '#222222' }
+        render: { fillStyle: '#222222' },
+        friction: 0.8,  // High friction for better push-off
+        restitution: 0.2  // Some bounciness
     });
     Matter.Composite.add(world, ground);
     
@@ -60,16 +62,72 @@ function draw() {
             endShape(isDrawing ? OPEN : CLOSE);
         }
         
-        // Draw existing shapes
-        for (let shape of shapes) {
-            stroke(0);
-            strokeWeight(2);
-            fill(200, 200, 255, 100);
+        // Draw existing shapes with different colors and connection points
+        for (let i = 0; i < shapes.length; i++) {
+            const shape = shapes[i];
+            
+            // Use different colors for first shape (likely body) vs appendages
+            if (i === 0) {
+                stroke(0);
+                strokeWeight(2);
+                fill(200, 200, 255, 150); // Body color - bluish
+            } else {
+                stroke(0);
+                strokeWeight(2);
+                fill(200, 255, 200, 150); // Appendage color - greenish
+                
+                // If we have a previous shape, draw a connection hint
+                if (shapes.length > 1) {
+                    // Find the closest point between this shape and first shape (body)
+                    let closestDistance = Infinity;
+                    let closestPoint1 = null;
+                    let closestPoint2 = null;
+                    
+                    for (const p1 of shapes[0]) { // First shape (body)
+                        for (const p2 of shape) { // Current shape (appendage)
+                            const d = dist(p1.x, p1.y, p2.x, p2.y);
+                            if (d < closestDistance) {
+                                closestDistance = d;
+                                closestPoint1 = p1;
+                                closestPoint2 = p2;
+                            }
+                        }
+                    }
+                    
+                    // Draw connection point indicators
+                    if (closestPoint1 && closestPoint2) {
+                        push();
+                        strokeWeight(3);
+                        stroke(255, 0, 0); // Red for connection points
+                        point(closestPoint1.x, closestPoint1.y);
+                        point(closestPoint2.x, closestPoint2.y);
+                        
+                        // Draw a dashed line between connection points
+                        drawDashedLine(closestPoint1.x, closestPoint1.y, 
+                                       closestPoint2.x, closestPoint2.y, 
+                                       5, 3);
+                        pop();
+                    }
+                }
+            }
+            
+            // Draw the shape
             beginShape();
             for (let point of shape) {
                 vertex(point.x, point.y);
             }
             endShape(CLOSE);
+        }
+        
+        // Show connection point hint text if multiple shapes
+        if (shapes.length > 0 && currentShape.length > 0) {
+            push();
+            fill(80);
+            noStroke();
+            textAlign(CENTER);
+            textSize(14);
+            text("Appendages will be connected at nearest points", width/2, 30);
+            pop();
         }
     } else {
         // Simulation mode
@@ -86,6 +144,30 @@ function draw() {
             walker.display();
         }
     }
+}
+
+// Helper function to draw a dashed line
+function drawDashedLine(x1, y1, x2, y2, dashLength, gapLength) {
+    const distance = dist(x1, y1, x2, y2);
+    const dashCount = Math.floor(distance / (dashLength + gapLength));
+    const dashVector = {
+        x: ((x2 - x1) / distance) * (dashLength + gapLength),
+        y: ((y2 - y1) / distance) * (dashLength + gapLength)
+    };
+    
+    push();
+    stroke(255, 0, 0, 150);
+    strokeWeight(2);
+    
+    for (let i = 0; i < dashCount; i++) {
+        const startX = x1 + (dashVector.x * i);
+        const startY = y1 + (dashVector.y * i);
+        const endX = startX + (dashVector.x * (dashLength / (dashLength + gapLength)));
+        const endY = startY + (dashVector.y * (dashLength / (dashLength + gapLength)));
+        
+        line(startX, startY, endX, endY);
+    }
+    pop();
 }
 
 function mousePressed() {
