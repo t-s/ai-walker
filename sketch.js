@@ -12,7 +12,7 @@ let world;
 let ground;
 
 function setup() {
-    canvas = createCanvas(800, 450); // Reduced height to match container
+    canvas = createCanvas(800, 400); // Reduced height further to match container
     canvas.parent('canvas-container');
     
     // Disable default touch behavior on canvas to prevent scrolling

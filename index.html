@@ -22,5 +22,16 @@
             </div>
         </div>
     </div>
+    
+    <!-- Force viewport resize for mobile -->
+    <script>
+        // Force the viewport to recalculate when loaded
+        window.addEventListener('load', function() {
+            // Slight delay to ensure everything is loaded
+            setTimeout(function() {
+                window.scrollTo(0, 1);
+            }, 100);
+        });
+    </script>
 </body>
 </html>
