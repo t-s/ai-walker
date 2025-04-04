@@ -42,9 +42,22 @@ function setup() {
     });
     Matter.Composite.add(world, ground);
     
-    // UI setup
-    document.getElementById('clear-btn').addEventListener('click', clearCanvas);
-    document.getElementById('simulate-btn').addEventListener('click', startSimulation);
+    // UI setup with mobile-friendly handling
+    const clearBtn = document.getElementById('clear-btn');
+    const simulateBtn = document.getElementById('simulate-btn');
+    
+    // Add both click and touchend events for better mobile support
+    clearBtn.addEventListener('click', clearCanvas);
+    clearBtn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        clearCanvas();
+    });
+    
+    simulateBtn.addEventListener('click', startSimulation);
+    simulateBtn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        startSimulation();
+    });
     
     // Add instructions
     let instructions = createP('Draw a body, then limbs. Click "Simulate" to see it move.');
@@ -311,14 +324,26 @@ function clearCanvas() {
         });
         Matter.Composite.add(world, ground);
     }
+    
+    // Force a redraw
+    redraw();
 }
 
 function startSimulation() {
+    console.log("Starting simulation, shapes:", shapes.length, "drawingMode:", drawingMode);
+    
     if (shapes.length > 0 && drawingMode) {
         drawingMode = false;
         simulationStarted = true;
         
         // Create walker from the drawn shapes
         walker = new Walker(shapes, world);
+        
+        // Force a redraw
+        redraw();
     }
 }
+
+// Make functions available globally for direct access from HTML
+window.clearCanvas = clearCanvas;
+window.startSimulation = startSimulation;

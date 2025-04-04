@@ -17,13 +17,13 @@
         <div id="canvas-container"></div>
         <div id="controls">
             <div class="button-group">
-                <button id="clear-btn">Clear</button>
-                <button id="simulate-btn">Simulate</button>
+                <button id="clear-btn" type="button" role="button">Clear</button>
+                <button id="simulate-btn" type="button" role="button">Simulate</button>
             </div>
         </div>
     </div>
     
-    <!-- Force viewport resize for mobile -->
+    <!-- Mobile optimizations -->
     <script>
         // Force the viewport to recalculate when loaded
         window.addEventListener('load', function() {
@@ -31,6 +31,19 @@
             setTimeout(function() {
                 window.scrollTo(0, 1);
             }, 100);
+            
+            // Add direct button handlers for better mobile support
+            document.getElementById('clear-btn').ontouchend = function(e) {
+                e.preventDefault();
+                if (window.clearCanvas) window.clearCanvas();
+                return false;
+            };
+            
+            document.getElementById('simulate-btn').ontouchend = function(e) {
+                e.preventDefault();
+                if (window.startSimulation) window.startSimulation();
+                return false;
+            };
         });
     </script>
 </body>

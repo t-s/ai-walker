@@ -86,6 +86,8 @@ button {
     font-size: 14px;
     transition: background-color 0.2s;
     min-width: 80px;
+    -webkit-tap-highlight-color: rgba(0,0,0,0); /* Remove tap highlight on mobile */
+    touch-action: manipulation; /* Optimize for touch */
 }
 
 button:hover {
