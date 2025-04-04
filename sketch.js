@@ -12,7 +12,7 @@ let world;
 let ground;
 
 function setup() {
-    canvas = createCanvas(800, 600);
+    canvas = createCanvas(800, 450); // Reduced height to match container
     canvas.parent('canvas-container');
     
     // Disable default touch behavior on canvas to prevent scrolling
@@ -47,10 +47,11 @@ function setup() {
     document.getElementById('simulate-btn').addEventListener('click', startSimulation);
     
     // Add instructions
-    let instructions = createP('Draw multiple shapes: First draw a body, then draw limbs/appendages. Then click "Simulate" to see how it moves.');
+    let instructions = createP('Draw a body, then limbs. Click "Simulate" to see it move.');
     instructions.parent('controls');
-    instructions.style('margin-top', '20px');
+    instructions.style('margin-top', '5px');
     instructions.style('font-style', 'italic');
+    instructions.style('font-size', '14px');
     
     background(255);
 }
