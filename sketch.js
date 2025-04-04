@@ -15,6 +15,19 @@ function setup() {
     canvas = createCanvas(800, 600);
     canvas.parent('canvas-container');
     
+    // Disable default touch behavior on canvas to prevent scrolling
+    canvas.elt.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+    }, { passive: false });
+    
+    canvas.elt.addEventListener('touchmove', function(e) {
+        e.preventDefault();
+    }, { passive: false });
+    
+    canvas.elt.addEventListener('touchend', function(e) {
+        e.preventDefault();
+    }, { passive: false });
+    
     // Initialize Matter.js physics engine
     engine = Matter.Engine.create();
     world = engine.world;
@@ -73,7 +86,10 @@ function draw() {
                 vertex(point.x, point.y);
             }
             if (isDrawing) {
-                vertex(mouseX, mouseY);
+                // Use touches array for touch devices, otherwise use mouse position
+                const inputX = touches.length > 0 ? touches[0].x : mouseX;
+                const inputY = touches.length > 0 ? touches[0].y : mouseY;
+                vertex(inputX, inputY);
             }
             endShape(isDrawing ? OPEN : CLOSE);
         }
@@ -190,20 +206,51 @@ function drawDashedLine(x1, y1, x2, y2, dashLength, gapLength) {
 }
 
 function mousePressed() {
-    if (drawingMode && mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
-        isDrawing = true;
-        currentShape = [{x: mouseX, y: mouseY}];
+    if (drawingMode) {
+        // Get the current position (touch or mouse)
+        const inputX = touches.length > 0 ? touches[0].x : mouseX;
+        const inputY = touches.length > 0 ? touches[0].y : mouseY;
+        
+        if (inputX > 0 && inputX < width && inputY > 0 && inputY < height) {
+            isDrawing = true;
+            currentShape = [{x: inputX, y: inputY}];
+        }
+        return false; // Prevent default behavior
     }
 }
 
+// For touch devices
+function touchStarted() {
+    // Use the same logic as mousePressed
+    return mousePressed();
+}
+
+function touchMoved() {
+    // Use the same logic as mouseDragged
+    return mouseDragged();
+}
+
+function touchEnded() {
+    // Use the same logic as mouseReleased
+    return mouseReleased();
+}
+
 function mouseDragged() {
-    if (isDrawing && drawingMode && mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
-        // Add points with a minimum distance to avoid too many points
-        const lastPoint = currentShape[currentShape.length - 1];
-        const d = dist(lastPoint.x, lastPoint.y, mouseX, mouseY);
-        if (d > 10) {
-            currentShape.push({x: mouseX, y: mouseY});
+    if (isDrawing && drawingMode) {
+        // Get the current position (touch or mouse)
+        const inputX = touches.length > 0 ? touches[0].x : mouseX;
+        const inputY = touches.length > 0 ? touches[0].y : mouseY;
+        
+        // Only add points if they're within the canvas
+        if (inputX > 0 && inputX < width && inputY > 0 && inputY < height) {
+            // Add points with a minimum distance to avoid too many points
+            const lastPoint = currentShape[currentShape.length - 1];
+            const d = dist(lastPoint.x, lastPoint.y, inputX, inputY);
+            if (d > 10) {
+                currentShape.push({x: inputX, y: inputY});
+            }
         }
+        return false; // Prevent default behavior
     }
 }
 
@@ -221,6 +268,7 @@ function mouseReleased() {
             shapes.push(currentShape);
             currentShape = [];
         }
+        return false; // Prevent default behavior
     }
 }
 
